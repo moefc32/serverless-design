@@ -1,105 +1,95 @@
 async function apiFetch(url, options = {}) {
-    const defaultHeaders = {
-        'User-Agent': 'Mfc Site Worker',
-        'Accept': 'application/json',
-    };
+	const defaultHeaders = {
+		'User-Agent': 'Mfc Site Worker',
+		'Accept': 'application/json',
+	};
 
-    options.headers = { ...defaultHeaders, ...(options.headers || {}) };
-    return fetch(url, options);
+	options.headers = { ...defaultHeaders, ...(options.headers || {}) };
+	return fetch(url, options);
 }
 
 export default {
-    async fetch(request, env, ctx) {
-        switch (request.method) {
-            case 'GET':
-                try {
-                    const behance_id = env.CONFIG_BEHANCE_ID;
-                    const behance_key = env.CONFIG_BEHANCE_KEY;
-                    const dribbble_key = env.CONFIG_DRIBBBLE_KEY;
-                    const youtube_id = env.CONFIG_YOUTUBE_ID;
+	async fetch(request, env, ctx) {
+		switch (request.method) {
+			case 'GET':
+				try {
+					const behance_id = env.CONFIG_BEHANCE_ID;
+					const behance_key = env.CONFIG_BEHANCE_KEY;
+					const dribbble_key = env.CONFIG_DRIBBBLE_KEY;
+					const youtube_id = env.CONFIG_YOUTUBE_ID;
 
-                    if (!behance_id || !behance_key || !dribbble_key || !youtube_id) {
-                        return new Response(JSON.stringify({
-                            error: 'Missing environment variable(s)',
-                        }), {
-                            status: 500,
-                            headers: { 'Content-Type': 'application/json' },
-                        });
-                    }
+					if (!behance_id || !behance_key || !dribbble_key || !youtube_id) {
+						return new Response(JSON.stringify({
+							error: 'Missing environment variable(s)',
+						}), {
+							status: 500,
+							headers: { 'Content-Type': 'application/json' },
+						});
+					}
 
-                    const [
-                        behanceResponse,
-                        dribbbleResponse
-                    ] = await Promise.all([
-                        apiFetch(`https://api.behance.net/v2/users/${behance_id}/projects?api_key=${behance_key}`),
-                        apiFetch(`https://api.dribbble.com/v2/user/shots?access_token=${dribbble_key}`)
-                    ]);
+					const behanceResponse = await apiFetch(`https://api.behance.net/v2/users/${behance_id}/projects?api_key=${behance_key}`);
+					let behanceData = [];
 
-                    if (!behanceResponse.ok ||
-                        !dribbbleResponse.ok
-                    ) {
-                        const [bText, dText] = await Promise.all([
-                            behanceResponse.text(),
-                            dribbbleResponse.text()
-                        ]);
+					if (behanceResponse.ok) {
+						const data = await behanceResponse.json();
+						behanceData = data.projects.map(p => ({
+							id: p.id,
+							title: p.name,
+							image: p.covers[404],
+							url: p.url,
+						}));
+					} else {
+						const text = await behanceResponse.text();
+						console.error(`Behance API returned ${behanceResponse.status}: ${text}`);
+					}
 
-                        return new Response(JSON.stringify({
-                            error: 'One or both APIs failed',
-                            behance: bText,
-                            dribbble: dText
-                        }), {
-                            status: 500,
-                            headers: { 'Content-Type': 'application/json' },
-                        });
-                    }
+					const dribbbleResponse = await apiFetch(`https://api.dribbble.com/v2/user/shots?access_token=${dribbble_key}`);
+					let dribbbleData = [];
 
-                    const [behanceData, dribbbleData] = await Promise.all([
-                        behanceResponse.json(),
-                        dribbbleResponse.json()
-                    ]);
-                    const result = {
-                        behance: [],
-                        dribbble: [],
-                    };
+					if (dribbbleResponse.ok) {
+						const data = await dribbbleResponse.json();
+						dribbbleData = data.map(p => ({
+							id: p.id,
+							title: p.title,
+							image: p.images.normal,
+							url: p.html_url,
+						}));
+					} else {
+						const text = await dribbbleResponse.text();
+						console.error(`Dribbble API returned ${dribbbleResponse.status}: ${text}`);
+					}
 
-                    behanceData.projects.forEach((item) => {
-                        result.behance.push({
-                            id: item.id,
-                            title: item.name,
-                            image: item.covers[404],
-                            url: item.url,
-                        });
-                    });
+					if (!behanceData.length && !dribbbleData.length) {
+						return new Response(JSON.stringify({
+							error: 'Failed to fetch all data',
+						}), {
+							status: 500,
+							headers: { 'Content-Type': 'application/json' },
+						});
+					}
 
-                    dribbbleData.forEach((item) => {
-                        result.dribbble.push({
-                            id: item.id,
-                            title: item.title,
-                            image: item.images.normal,
-                            url: item.html_url,
-                        });
-                    });
+					return new Response(JSON.stringify({
+						behance: behanceData,
+						dribbble: dribbbleData,
+					}), { headers: { 'Content-Type': 'application/json' } });
 
-                    return new Response(JSON.stringify(result), {
-                        headers: { 'Content-Type': 'application/json' },
-                    });
-                } catch (e) {
-                    return new Response(JSON.stringify({
-                        error: e.message,
-                    }), {
-                        status: 500,
-                        headers: { 'Content-Type': 'application/json' },
-                    });
-                }
+				} catch (e) {
+					return new Response(JSON.stringify({
+						error: e.message,
+					}), {
+						status: 500,
+						headers: { 'Content-Type': 'application/json' },
+					});
+				}
 
-            case 'DELETE':
-                return new Response(null, { status: 204 });
+			case 'DELETE':
+				return new Response(null, { status: 204 });
 
-            default:
-                return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-                    status: 405,
-                    headers: { 'Content-Type': 'application/json' },
-                });
-        }
-    },
+			default:
+				return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+					status: 405,
+					headers: { 'Content-Type': 'application/json' },
+				});
+		}
+	},
 };
