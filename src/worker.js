@@ -1,7 +1,12 @@
+const application = 'Mfc API';
+const contentTypeJson = {
+	'Content-Type': 'application/json',
+};
+
 async function apiFetch(url, options = {}) {
 	const defaultHeaders = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; Win11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.90 Safari/537.36',
-        'Accept': 'application/json',
+		'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; Win11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.90 Safari/537.36',
+		'Accept': 'application/json',
 	};
 
 	options.headers = { ...defaultHeaders, ...(options.headers || {}) };
@@ -15,24 +20,42 @@ export default {
 				try {
 					const behance_id = env.CONFIG_BEHANCE_ID;
 					const behance_key = env.CONFIG_BEHANCE_KEY;
+					const behance_proxy = env.CONFIG_BEHANCE_PROXY;
 					const dribbble_key = env.CONFIG_DRIBBBLE_KEY;
 					const youtube_id = env.CONFIG_YOUTUBE_ID;
 
-					if (!behance_id || !behance_key || !dribbble_key || !youtube_id) {
+					if (!behance_id || !behance_key || !behance_proxy || !dribbble_key || !youtube_id) {
 						return new Response(JSON.stringify({
-							error: 'Missing environment variable(s)',
+							application,
+							message: 'Missing environment variable(s)!',
 						}), {
 							status: 500,
-							headers: { 'Content-Type': 'application/json' },
+							headers: contentTypeJson,
 						});
 					}
 
-					const behanceResponse = await apiFetch(`https://api.behance.net/v2/users/${behance_id}/projects?api_key=${behance_key}`);
-					let behanceData = [];
+					const behanceResponse = await fetch(behance_proxy, {
+						method: 'POST',
+						headers: contentTypeJson,
+						body: JSON.stringify({
+							behance_id,
+							behance_key,
+						}),
+					});
+
+					const dribbbleResponse = await apiFetch(
+						`https://api.dribbble.com/v2/user/shots?access_token=${dribbble_key}`);
+
+					const result = {
+						behance: [],
+						dribbble: [],
+						youtube: [],
+					};
 
 					if (behanceResponse.ok) {
-						const data = await behanceResponse.json();
-						behanceData = data.projects.map(p => ({
+						const { data } = await behanceResponse.json();
+
+						result.behance = data.map(p => ({
 							id: p.id,
 							title: p.name,
 							image: p.covers[404],
@@ -43,12 +66,10 @@ export default {
 						console.error(`Behance API returned ${behanceResponse.status}: ${text}`);
 					}
 
-					const dribbbleResponse = await apiFetch(`https://api.dribbble.com/v2/user/shots?access_token=${dribbble_key}`);
-					let dribbbleData = [];
-
 					if (dribbbleResponse.ok) {
 						const data = await dribbbleResponse.json();
-						dribbbleData = data.map(p => ({
+
+						result.dribbble = data.map(p => ({
 							id: p.id,
 							title: p.title,
 							image: p.images.normal,
@@ -59,26 +80,21 @@ export default {
 						console.error(`Dribbble API returned ${dribbbleResponse.status}: ${text}`);
 					}
 
-					if (!behanceData.length && !dribbbleData.length) {
-						return new Response(JSON.stringify({
-							error: 'Failed to fetch all data',
-						}), {
-							status: 500,
-							headers: { 'Content-Type': 'application/json' },
-						});
-					}
-
 					return new Response(JSON.stringify({
-						behance: behanceData,
-						dribbble: dribbbleData,
-					}), { headers: { 'Content-Type': 'application/json' } });
+						application,
+						message: 'Fetch data success.',
+						data: result,
+					}), {
+						headers: contentTypeJson,
+					});
 
 				} catch (e) {
 					return new Response(JSON.stringify({
-						error: e.message,
+						application,
+						message: e.message,
 					}), {
 						status: 500,
-						headers: { 'Content-Type': 'application/json' },
+						headers: contentTypeJson,
 					});
 				}
 
@@ -86,9 +102,12 @@ export default {
 				return new Response(null, { status: 204 });
 
 			default:
-				return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+				return new Response(JSON.stringify({
+					application,
+					message: 'Method not allowed!'
+				}), {
 					status: 405,
-					headers: { 'Content-Type': 'application/json' },
+					headers: contentTypeJson,
 				});
 		}
 	},
