@@ -1,3 +1,5 @@
+import { XMLParser } from 'fast-xml-parser';
+
 const application = 'Mfc API';
 const contentTypeJson = {
 	'Content-Type': 'application/json',
@@ -45,6 +47,8 @@ export default {
 
 					const dribbbleResponse = await apiFetch(
 						`https://api.dribbble.com/v2/user/shots?access_token=${dribbble_key}`);
+					const youtubeResponse = await apiFetch(
+						`https://www.youtube.com/feeds/videos.xml?channel_id=${youtube_id}`);
 
 					const result = {
 						behance: [],
@@ -74,6 +78,22 @@ export default {
 							title: p.title,
 							image: p.images.normal,
 							url: p.html_url,
+						}));
+					} else {
+						const text = await dribbbleResponse.text();
+						console.error(`Dribbble API returned ${dribbbleResponse.status}: ${text}`);
+					}
+
+					if (youtubeResponse.ok) {
+						const xml = await youtubeResponse.text();
+						const parser = new XMLParser();
+						const data = parser.parse(xml);
+
+						result.youtube = (data.feed.entry.slice(0, 6) || []).map((post) => ({
+							id: post['yt:videoId'],
+							title: post.title,
+							image: `https://img.youtube.com/vi/${post['yt:videoId']}/maxresdefault.jpg`,
+							url: `https://www.youtube.com/watch?v=${post['yt:videoId']}`,
 						}));
 					} else {
 						const text = await dribbbleResponse.text();
