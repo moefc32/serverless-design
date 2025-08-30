@@ -1,9 +1,10 @@
 import { XMLParser } from 'fast-xml-parser';
 
 const application = 'Mfc API';
-const contentTypeJson = {
-	'Content-Type': 'application/json',
-};
+const cache = caches.default;
+const cacheDuration = 60 * 60 * 24;
+const cacheControl = { 'Cache-Control': `public, max-age=${cacheDuration}` };
+const contentTypeJson = { 'Content-Type': 'application/json' };
 
 async function apiFetch(url, options = {}) {
 	const defaultHeaders = {
@@ -20,6 +21,15 @@ export default {
 		switch (request.method) {
 			case 'GET':
 				try {
+					const cachedResponse = await cache.match(request);
+
+					if (cachedResponse) {
+						const age = cachedResponse.headers.get('CF-Cache-Age');
+						if (age !== null && parseInt(age) < cacheDuration) {
+							return cachedResponse;
+						}
+					}
+
 					const behance_id = env.CONFIG_BEHANCE_ID;
 					const behance_key = env.CONFIG_BEHANCE_KEY;
 					const behance_proxy = env.CONFIG_BEHANCE_PROXY;
@@ -36,19 +46,29 @@ export default {
 						});
 					}
 
-					const behanceResponse = await fetch(behance_proxy, {
-						method: 'POST',
-						headers: contentTypeJson,
-						body: JSON.stringify({
-							behance_id,
-							behance_key,
+					const response = await Promise.allSettled([
+						fetch(behance_proxy, {
+							method: 'POST',
+							headers: contentTypeJson,
+							body: JSON.stringify({
+								behance_id,
+								behance_key,
+							}),
 						}),
+						apiFetch(`https://api.dribbble.com/v2/user/shots?access_token=${dribbble_key}`),
+						apiFetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${youtube_id}`),
+					]);
+
+					const apiNames = ['Behance', 'Dribbble', 'YouTube'];
+					response.forEach((r, i) => {
+						if (r.status === 'rejected') {
+							console.error(`${apiNames[i]} API failed: ${r.reason}`);
+						}
 					});
 
-					const dribbbleResponse = await apiFetch(
-						`https://api.dribbble.com/v2/user/shots?access_token=${dribbble_key}`);
-					const youtubeResponse = await apiFetch(
-						`https://www.youtube.com/feeds/videos.xml?channel_id=${youtube_id}`);
+					const [behanceResponse, dribbbleResponse, youtubeResponse] = response.map((r) =>
+						r.status === 'fulfilled' ? r.value : null
+					);
 
 					const result = {
 						behance: [],
@@ -56,7 +76,7 @@ export default {
 						youtube: [],
 					};
 
-					if (behanceResponse.ok) {
+					if (behanceResponse?.ok) {
 						const { data } = await behanceResponse.json();
 
 						result.behance = data.map(p => ({
@@ -65,12 +85,9 @@ export default {
 							image: p.covers[404],
 							url: p.url,
 						}));
-					} else {
-						const text = await behanceResponse.text();
-						console.error(`Behance API returned ${behanceResponse.status}: ${text}`);
 					}
 
-					if (dribbbleResponse.ok) {
+					if (dribbbleResponse?.ok) {
 						const data = await dribbbleResponse.json();
 
 						result.dribbble = data.map(p => ({
@@ -79,12 +96,9 @@ export default {
 							image: p.images.normal,
 							url: p.html_url,
 						}));
-					} else {
-						const text = await dribbbleResponse.text();
-						console.error(`Dribbble API returned ${dribbbleResponse.status}: ${text}`);
 					}
 
-					if (youtubeResponse.ok) {
+					if (youtubeResponse?.ok) {
 						const xml = await youtubeResponse.text();
 						const parser = new XMLParser();
 						const data = parser.parse(xml);
@@ -95,19 +109,21 @@ export default {
 							image: `https://img.youtube.com/vi/${post['yt:videoId']}/maxresdefault.jpg`,
 							url: `https://www.youtube.com/watch?v=${post['yt:videoId']}`,
 						}));
-					} else {
-						const text = await dribbbleResponse.text();
-						console.error(`Dribbble API returned ${dribbbleResponse.status}: ${text}`);
 					}
 
-					return new Response(JSON.stringify({
+					const cachedData = new Response(JSON.stringify({
 						application,
 						message: 'Fetch data success.',
 						data: result,
 					}), {
-						headers: contentTypeJson,
+						headers: {
+							...contentTypeJson,
+							...cacheControl,
+						}
 					});
 
+					ctx.waitUntil(cache.put(request, cachedData.clone()));
+					return cachedData;
 				} catch (e) {
 					return new Response(JSON.stringify({
 						application,
@@ -119,6 +135,7 @@ export default {
 				}
 
 			case 'DELETE':
+				await cache.delete(request);
 				return new Response(null, { status: 204 });
 
 			default:
