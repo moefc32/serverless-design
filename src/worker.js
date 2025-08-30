@@ -1,10 +1,10 @@
 import { XMLParser } from 'fast-xml-parser';
+import corsHeaders from './corsHeaders.js';
+import responseHelper from './responseHelper.js';
 
-const application = 'Mfc API';
 const cache = caches.default;
 const cacheDuration = 60 * 60 * 24;
 const cacheControl = { 'Cache-Control': `public, max-age=${cacheDuration}` };
-const contentTypeJson = { 'Content-Type': 'application/json' };
 
 async function apiFetch(url, options = {}) {
 	const defaultHeaders = {
@@ -19,6 +19,9 @@ async function apiFetch(url, options = {}) {
 export default {
 	async fetch(request, env, ctx) {
 		switch (request.method) {
+			case 'OPTIONS':
+				return new Response(null, { headers: corsHeaders });
+
 			case 'GET':
 				try {
 					const cachedResponse = await cache.match(request);
@@ -37,19 +40,15 @@ export default {
 					const youtube_id = env.CONFIG_YOUTUBE_ID;
 
 					if (!behance_id || !behance_key || !behance_proxy || !dribbble_key || !youtube_id) {
-						return new Response(JSON.stringify({
-							application,
+						return responseHelper({
 							message: 'Missing environment variable(s)!',
-						}), {
-							status: 500,
-							headers: contentTypeJson,
-						});
+						}, 500);
 					}
 
 					const response = await Promise.allSettled([
 						fetch(behance_proxy, {
 							method: 'POST',
-							headers: contentTypeJson,
+							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
 								behance_id,
 								behance_key,
@@ -111,41 +110,29 @@ export default {
 						}));
 					}
 
-					const cachedData = new Response(JSON.stringify({
-						application,
+					const cachedData = responseHelper({
 						message: 'Fetch data success.',
 						data: result,
-					}), {
-						headers: {
-							...contentTypeJson,
-							...cacheControl,
-						}
+					}, 200, {
+						...cacheControl,
 					});
 
 					ctx.waitUntil(cache.put(request, cachedData.clone()));
 					return cachedData;
 				} catch (e) {
-					return new Response(JSON.stringify({
-						application,
+					return responseHelper({
 						message: e.message,
-					}), {
-						status: 500,
-						headers: contentTypeJson,
-					});
+					}, 500);
 				}
 
 			case 'DELETE':
 				await cache.delete(request);
-				return new Response(null, { status: 204 });
+				return responseHelper(null, 204);
 
 			default:
-				return new Response(JSON.stringify({
-					application,
+				return responseHelper({
 					message: 'Method not allowed!'
-				}), {
-					status: 405,
-					headers: contentTypeJson,
-				});
+				}, 405);
 		}
 	},
 };
