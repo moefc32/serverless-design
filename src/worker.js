@@ -8,19 +8,19 @@ import responseHelper from './responseHelper.js';
 const app = new Hono();
 
 const cache = caches.default;
-const cacheDuration = 60 * 60 * 12;
+const baseCacheDuration = 60 * 60 * 24;
 const cacheControl = {
-    'Cache-Control': `public, max-age=${cacheDuration}, stale-while-revalidate=${cacheDuration}`
+    'Cache-Control': `public, max-age=${baseCacheDuration}, stale-while-revalidate=${baseCacheDuration}`
 }
 const cacheKey = new Request('https://internal/cache/serverless-design', {
     method: 'GET',
 });
 
-app.options('*', (c) => {
+app.options('/', (c) => {
     return new Response(null, { headers: corsHeaders });
 });
 
-app.get('*', async (c) => {
+app.get('/', async (c) => {
     const env = c.env;
     const ctx = c.executionCtx;
 
@@ -59,8 +59,13 @@ app.get('*', async (c) => {
         const response = await Promise.allSettled([
             (async () => {
                 try {
-                    const cached = await env.KV_CACHE.get(`design:behance`);
-                    if (cached) return result.behance = JSON.parse(cached);
+                    const cached = await env.KV_CACHE
+                        .get(`design:behance`, { type: 'json' });
+
+                    if (cached) {
+                        result.behance = cached;
+                        return;
+                    }
 
                     const behanceResponse = await fetch(behance_proxy, {
                         method: 'POST',
@@ -89,7 +94,7 @@ app.get('*', async (c) => {
 
                     await env.KV_CACHE.put(`design:behance`,
                         JSON.stringify(formattedData), {
-                        expirationTtl: cacheDuration,
+                        expirationTtl: baseCacheDuration * 28,
                     });
 
                     result.behance = formattedData;
@@ -100,8 +105,13 @@ app.get('*', async (c) => {
             })(),
             (async () => {
                 try {
-                    const cached = await env.KV_CACHE.get(`design:dribbble`);
-                    if (cached) return result.dribbble = JSON.parse(cached);
+                    const cached = await env.KV_CACHE
+                        .get(`design:dribbble`, { type: 'json' });
+
+                    if (cached) {
+                        result.dribbble = cached;
+                        return;
+                    }
 
                     const dribbbleResponse = await fetch(
                         `https://api.dribbble.com/v2/user/shots?access_token=${dribbble_key}`
@@ -125,7 +135,7 @@ app.get('*', async (c) => {
 
                     await env.KV_CACHE.put(`design:dribbble`,
                         JSON.stringify(formattedData), {
-                        expirationTtl: cacheDuration,
+                        expirationTtl: baseCacheDuration * 28,
                     });
 
                     result.dribbble = formattedData;
@@ -136,8 +146,13 @@ app.get('*', async (c) => {
             })(),
             (async () => {
                 try {
-                    const cached = await env.KV_CACHE.get(`design:youtube`);
-                    if (cached) return result.youtube = JSON.parse(cached);
+                    const cached = await env.KV_CACHE
+                        .get(`design:youtube`, { type: 'json' });
+
+                    if (cached) {
+                        result.youtube = cached;
+                        return;
+                    }
 
                     const youtubeResponse = await fetch(
                         `https://www.youtube.com/feeds/videos.xml?channel_id=${youtube_id}`
@@ -165,7 +180,7 @@ app.get('*', async (c) => {
 
                     await env.KV_CACHE.put(`design:youtube`,
                         JSON.stringify(formattedData), {
-                        expirationTtl: cacheDuration,
+                        expirationTtl: baseCacheDuration * 28,
                     });
 
                     result.youtube = formattedData;
@@ -195,7 +210,7 @@ app.get('*', async (c) => {
     }
 });
 
-app.delete('*', async (c) => {
+app.delete('/', async (c) => {
     await cache.delete(cacheKey);
     return responseHelper(null, 204);
 });
@@ -206,4 +221,10 @@ app.all('*', () => {
     }, 405);
 });
 
-export default app;
+export default {
+    fetch: app.fetch,
+    async scheduled(evt, env, ctx) {
+        await app.request('/', {}, env);
+        console.log('Cron job processed.');
+    },
+};
