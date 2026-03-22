@@ -1,20 +1,19 @@
 import { Hono } from 'hono';
 import { XMLParser } from 'fast-xml-parser';
-
 import corsHeaders from './corsHeaders.js';
-import fetch from './fetch.js'
-import responseHelper from './responseHelper.js';
+
+import {
+    baseDuration,
+    cacheControl,
+    getCacheKey,
+} from '../util/cache.js';
+import fetch from '../util/fetch.js'
+import sendResponse from '../util/sendResponse.js';
 
 const app = new Hono();
 
 const cache = caches.default;
-const baseCacheDuration = 60 * 60 * 24;
-const cacheControl = {
-    'Cache-Control': `public, max-age=${baseCacheDuration}, stale-while-revalidate=${baseCacheDuration}`
-}
-const cacheKey = new Request('https://internal/cache/serverless-design', {
-    method: 'GET',
-});
+const cacheKey = getCacheKey('https://internal/cache/serverless-design');
 
 app.options('/', (c) => {
     return new Response(null, { headers: corsHeaders });
@@ -45,7 +44,7 @@ app.get('/', async (c) => {
             !dribbble_key ||
             !youtube_id
         ) {
-            return responseHelper({
+            return sendResponse({
                 message: 'Missing environment variable(s)!',
             }, 500);
         }
@@ -94,7 +93,7 @@ app.get('/', async (c) => {
 
                     await env.KV_CACHE.put(`design:behance`,
                         JSON.stringify(formattedData), {
-                        expirationTtl: baseCacheDuration * 28,
+                        expirationTtl: baseDuration * 28,
                     });
 
                     result.behance = formattedData;
@@ -135,7 +134,7 @@ app.get('/', async (c) => {
 
                     await env.KV_CACHE.put(`design:dribbble`,
                         JSON.stringify(formattedData), {
-                        expirationTtl: baseCacheDuration * 28,
+                        expirationTtl: baseDuration * 28,
                     });
 
                     result.dribbble = formattedData;
@@ -180,7 +179,7 @@ app.get('/', async (c) => {
 
                     await env.KV_CACHE.put(`design:youtube`,
                         JSON.stringify(formattedData), {
-                        expirationTtl: baseCacheDuration * 28,
+                        expirationTtl: baseDuration * 28,
                     });
 
                     result.youtube = formattedData;
@@ -191,7 +190,7 @@ app.get('/', async (c) => {
             })(),
         ]);
 
-        const cachedData = responseHelper({
+        const cachedData = sendResponse({
             message: 'Fetch data success.',
             data: result,
         }, 200, {
@@ -204,7 +203,7 @@ app.get('/', async (c) => {
 
         return cachedData;
     } catch (e) {
-        return responseHelper({
+        return sendResponse({
             message: e.message,
         }, 500);
     }
@@ -212,11 +211,11 @@ app.get('/', async (c) => {
 
 app.delete('/', async (c) => {
     await cache.delete(cacheKey);
-    return responseHelper(null, 204);
+    return sendResponse(null, 204);
 });
 
 app.all('*', () => {
-    return responseHelper({
+    return sendResponse({
         message: 'Method not allowed!',
     }, 405);
 });
