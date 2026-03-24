@@ -34,15 +34,19 @@ app.get('/', async (c) => {
         const behance_id = env.CONFIG_BEHANCE_ID;
         const behance_key = env.CONFIG_BEHANCE_KEY;
         const behance_proxy = env.CONFIG_BEHANCE_PROXY;
+        const dribbble_id = env.CONFIG_DRIBBBLE_ID;
         const dribbble_key = env.CONFIG_DRIBBBLE_KEY;
         const youtube_id = env.CONFIG_YOUTUBE_ID;
+        const youtube_key = env.CONFIG_YOUTUBE_KEY;
 
         if (
             !behance_id ||
             !behance_key ||
             !behance_proxy ||
+            !dribbble_id ||
             !dribbble_key ||
-            !youtube_id
+            !youtube_id ||
+            !youtube_key
         ) {
             return sendResponse({
                 message: 'Missing environment variable(s)!',
@@ -50,9 +54,18 @@ app.get('/', async (c) => {
         }
 
         const result = {
-            behance: [],
-            dribbble: [],
-            youtube: [],
+            behance: {
+                projects: [],
+                url: `https://behance.net/${behance_id}`,
+            },
+            dribbble: {
+                projects: [],
+                url: `https://dribbble.com/${dribbble_id}`,
+            },
+            youtube: {
+                videos: [],
+                url: `https://youtube.com/${youtube_id}`,
+            },
         }
 
         const response = await Promise.allSettled([
@@ -62,7 +75,7 @@ app.get('/', async (c) => {
                         .get(`design:behance`, { type: 'json' });
 
                     if (cached) {
-                        result.behance = cached;
+                        result.behance.projects = cached;
                         return;
                     }
 
@@ -84,19 +97,21 @@ app.get('/', async (c) => {
 
                     const { data } = await behanceResponse.json();
 
-                    const formattedData = data.map((p) => ({
-                        id: p.id,
-                        title: p.name,
-                        image: p.covers[404],
-                        url: p.url,
-                    }));
+                    const formattedData = ([].concat(data || [])
+                        .slice(0, 12) || [])
+                        .map((p) => ({
+                            id: p.id,
+                            title: p.name,
+                            image: p.covers[404],
+                            url: p.url,
+                        }));
 
                     await env.KV_CACHE.put(`design:behance`,
                         JSON.stringify(formattedData), {
                         expirationTtl: baseDuration * 28,
                     });
 
-                    result.behance = formattedData;
+                    result.behance.projects = formattedData;
                 } catch (e) {
                     console.error(e);
                     return null;
@@ -108,7 +123,7 @@ app.get('/', async (c) => {
                         .get(`design:dribbble`, { type: 'json' });
 
                     if (cached) {
-                        result.dribbble = cached;
+                        result.dribbble.projects = cached;
                         return;
                     }
 
@@ -125,19 +140,21 @@ app.get('/', async (c) => {
 
                     const data = await dribbbleResponse.json();
 
-                    const formattedData = data.map((p) => ({
-                        id: p.id,
-                        title: p.title,
-                        image: p.images.normal,
-                        url: p.html_url,
-                    }));
+                    const formattedData = ([].concat(data || [])
+                        .slice(0, 12) || [])
+                        .map((p) => ({
+                            id: p.id,
+                            title: p.title,
+                            image: p.images.normal,
+                            url: p.html_url,
+                        }));
 
                     await env.KV_CACHE.put(`design:dribbble`,
                         JSON.stringify(formattedData), {
                         expirationTtl: baseDuration * 28,
                     });
 
-                    result.dribbble = formattedData;
+                    result.dribbble.projects = formattedData;
                 } catch (e) {
                     console.error(e);
                     return null;
@@ -149,12 +166,12 @@ app.get('/', async (c) => {
                         .get(`design:youtube`, { type: 'json' });
 
                     if (cached) {
-                        result.youtube = cached;
+                        result.youtube.videos = cached;
                         return;
                     }
 
                     const youtubeResponse = await fetch(
-                        `https://www.youtube.com/feeds/videos.xml?channel_id=${youtube_id}`
+                        `https://www.youtube.com/feeds/videos.xml?channel_id=${youtube_key}`
                     );
 
                     if (!youtubeResponse?.ok) {
@@ -170,11 +187,11 @@ app.get('/', async (c) => {
 
                     const formattedData = ([].concat(data.feed.entry || [])
                         .slice(0, 6) || [])
-                        .map((post) => ({
-                            id: post['yt:videoId'],
-                            title: post.title,
-                            image: `https://img.youtube.com/vi/${post['yt:videoId']}/maxresdefault.jpg`,
-                            url: `https://www.youtube.com/watch?v=${post['yt:videoId']}`,
+                        .map((p) => ({
+                            id: p['yt:videoId'],
+                            title: p.title,
+                            image: `https://img.youtube.com/vi/${p['yt:videoId']}/maxresdefault.jpg`,
+                            url: `https://www.youtube.com/watch?v=${p['yt:videoId']}`,
                         }));
 
                     await env.KV_CACHE.put(`design:youtube`,
@@ -182,7 +199,7 @@ app.get('/', async (c) => {
                         expirationTtl: baseDuration * 28,
                     });
 
-                    result.youtube = formattedData;
+                    result.youtube.videos = formattedData;
                 } catch (e) {
                     console.error(e);
                     return null;
