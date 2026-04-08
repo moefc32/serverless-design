@@ -6,7 +6,8 @@ import {
     baseDuration,
     cacheControl,
 } from '../util/cache.js';
-import fetch from '../util/fetch.js'
+import fetch from '../util/fetch.js';
+import fetchProxy from '../util/fetchProxy.js';
 import sendResponse from '../util/sendResponse.js';
 
 const app = new Hono();
@@ -31,18 +32,20 @@ app.get('/', async (c) => {
             if (cachedResponse) return cachedResponse;
         }
 
+        const api_proxy = env.CONFIG_API_PROXY;
+        const service_secret = env.CONFIG_SERVICE_SECRET;
         const behance_id = env.CONFIG_BEHANCE_ID;
         const behance_key = env.CONFIG_BEHANCE_KEY;
-        const behance_proxy = env.CONFIG_BEHANCE_PROXY;
         const dribbble_id = env.CONFIG_DRIBBBLE_ID;
         const dribbble_key = env.CONFIG_DRIBBBLE_KEY;
         const youtube_id = env.CONFIG_YOUTUBE_ID;
         const youtube_key = env.CONFIG_YOUTUBE_KEY;
 
         if (
+            !api_proxy ||
+            !service_secret ||
             !behance_id ||
             !behance_key ||
-            !behance_proxy ||
             !dribbble_id ||
             !dribbble_key ||
             !youtube_id ||
@@ -66,7 +69,7 @@ app.get('/', async (c) => {
                 videos: [],
                 url: `https://youtube.com/${youtube_id}`,
             },
-        }
+        };
 
         const response = await Promise.allSettled([
             (async () => {
@@ -79,13 +82,8 @@ app.get('/', async (c) => {
                         return;
                     }
 
-                    const behanceResponse = await fetch(behance_proxy, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            behance_id,
-                            behance_key,
-                        }),
+                    const behanceResponse = await fetchProxy(api_proxy, service_secret, {
+                        target: `https://api.behance.net/v2/users/${behance_id}/projects?api_key=${behance_key}`,
                     });
 
                     if (!behanceResponse?.ok) {
@@ -97,7 +95,7 @@ app.get('/', async (c) => {
 
                     const { data } = await behanceResponse.json();
 
-                    const formattedData = ([].concat(data || [])
+                    const formattedData = ([].concat(data.projects || [])
                         .slice(0, 12) || [])
                         .map((p) => ({
                             id: p.id,
