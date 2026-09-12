@@ -75,7 +75,7 @@ app.get('/', async (c) => {
             (async () => {
                 try {
                     const cached = await env.KV_CACHE
-                        .get(`design:behance`, { type: 'json' });
+                        .get('design:behance', { type: 'json' });
 
                     if (cached) {
                         result.behance.projects = cached;
@@ -104,7 +104,7 @@ app.get('/', async (c) => {
                             url: p.url,
                         }));
 
-                    await env.KV_CACHE.put(`design:behance`,
+                    await env.KV_CACHE.put('design:behance',
                         JSON.stringify(formattedData), {
                         expirationTtl: baseDuration * 28,
                     });
@@ -119,7 +119,7 @@ app.get('/', async (c) => {
             (async () => {
                 try {
                     const cached = await env.KV_CACHE
-                        .get(`design:dribbble`, { type: 'json' });
+                        .get('design:dribbble', { type: 'json' });
 
                     if (cached) {
                         result.dribbble.projects = cached;
@@ -148,7 +148,7 @@ app.get('/', async (c) => {
                             url: p.html_url,
                         }));
 
-                    await env.KV_CACHE.put(`design:dribbble`,
+                    await env.KV_CACHE.put('design:dribbble',
                         JSON.stringify(formattedData), {
                         expirationTtl: baseDuration * 28,
                     });
@@ -163,7 +163,7 @@ app.get('/', async (c) => {
             (async () => {
                 try {
                     const cached = await env.KV_CACHE
-                        .get(`design:youtube`, { type: 'json' });
+                        .get('design:youtube', { type: 'json' });
 
                     if (cached) {
                         result.youtube.videos = cached;
@@ -194,7 +194,7 @@ app.get('/', async (c) => {
                             url: `https://www.youtube.com/watch?v=${p['yt:videoId']}`,
                         }));
 
-                    await env.KV_CACHE.put(`design:youtube`,
+                    await env.KV_CACHE.put('design:youtube',
                         JSON.stringify(formattedData), {
                         expirationTtl: baseDuration * 28,
                     });
@@ -227,11 +227,21 @@ app.get('/', async (c) => {
 });
 
 app.delete('/', async (c) => {
+    const env = c.env;
+    const kvKeys = [
+        'design:behance',
+        'design:dribbble',
+        'design:youtube',
+    ];
     const cacheKey = new Request(c.req.url, {
         method: 'GET',
     });
 
-    await cache.delete(cacheKey);
+    await Promise.allSettled([
+        cache.delete(cacheKey),
+        ...kvKeys.map((item) => env.KV_CACHE.delete(item))
+    ]);
+
     return sendResponse(null, 204);
 });
 
