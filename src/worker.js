@@ -20,7 +20,11 @@ app.options('/', (c) => {
 app.get('/', async (c) => {
     const env = c.env;
     const ctx = c.executionCtx;
-    const cacheKey = new Request(c.req.url, {
+
+    const parsedUrl = new URL(c.req.url);
+    parsedUrl.search = '';
+
+    const cacheKey = new Request(parsedUrl.toString(), {
         method: 'GET',
     });
 
@@ -233,7 +237,11 @@ app.delete('/', async (c) => {
         'design:dribbble',
         'design:youtube',
     ];
-    const cacheKey = new Request(c.req.url, {
+
+    const parsedUrl = new URL(c.req.url);
+    parsedUrl.search = '';
+
+    const cacheKey = new Request(parsedUrl.toString(), {
         method: 'GET',
     });
 
